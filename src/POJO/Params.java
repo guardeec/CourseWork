@@ -27,26 +27,37 @@ public class Params {
     private BigInteger right;
 
     /*
-    генерируем или заносим начальные параметры
+    генерируем p, a и y`
      */
     public void initStartParams(){
+        //чистим зависимые значения
         clearStagesAfterStartParams();
+        //процедура генерации, подбираем такие значения что бы выполнялось (a^y` != 1 mod p)
         do {
-            BigInteger p0 = BigInteger.probablePrime(32, new SecureRandom()).subtract(BigInteger.ONE);
+            BigInteger p0 = BigInteger.probablePrime(96, new SecureRandom()).subtract(BigInteger.ONE);
             do {
-                this.gamma = BigInteger.probablePrime(16, new SecureRandom());
+                this.gamma = BigInteger.probablePrime(160, new SecureRandom());
                 this.p = gamma.multiply(p0).add(BigInteger.ONE);
             }while (!this.p.isProbablePrime(5000));
-            this.a = BigInteger.probablePrime(32, new SecureRandom()).modPow(p0, p);
+            this.a = BigInteger.probablePrime(128, new SecureRandom()).modPow(p0, p);
         }while (this.a.modPow(this.gamma,this.p).compareTo(BigInteger.ONE)!=0);
     }
+    /*
+    заносим ручками p, a и y`
+     */
     public void initStartParams(BigInteger p, BigInteger a, BigInteger gamma){
+        //чистим зависимые значения
         clearStagesAfterStartParams();
-        if (p.isProbablePrime(5000) && a.modPow(gamma,p).compareTo(BigInteger.ONE)==0){
+        //проверяем значения на корректность (a^y` != 1 mod p) и p - простое
+        if (p.isProbablePrime(5000) && a.modPow(gamma,p).compareTo(BigInteger.ONE)==0 && gamma.bitLength()>128){
             this.p = p;
             this.gamma = gamma;
             this.a = a;
         }else {
+            //если не корректно то кидаем исключение
+            this.p = null;
+            this.gamma = null;
+            this.a = null;
             throw new ArithmeticException("Неверные параметры p, a и gamma");
         }
     }
@@ -55,15 +66,24 @@ public class Params {
     генерируем ключи x и y
      */
     public void initXandY(){
+        //чистим зависимые значения
         clearStagesAfterXandY();
-        this.x = new BigInteger(32, new SecureRandom());
+        this.x = new BigInteger(this.p.subtract(BigInteger.ONE).bitLength(), new SecureRandom());
         this.y = this.a.modPow(this.x, this.p);
     }
+    /*
+    заносим ручками x и y
+     */
     public void initXandY(BigInteger x){
+        //чистим зависимые значения
         clearStagesAfterXandY();
-        if (x.bitLength()>3 && x.bitLength()<32){
+        //проверяем значения на корректность (длинна)
+        if (x.bitLength()>3 && x.bitLength()<this.p.subtract(BigInteger.ONE).bitLength()){
             this.y = this.a.modPow(this.x, this.p);
         }else {
+            //если не корректно то кидаем исключение
+            this.x = null;
+            this.y = null;
             throw new ArithmeticException("Неправильная длинна x");
         }
     }
@@ -72,18 +92,30 @@ public class Params {
     генерируем хэш
      */
     public void initHash(){
+        //чистим зависимые значения
         clearStagesAfterHash();
-        this.u = new BigInteger(15, new SecureRandom());
+        //заносим хэш/сообщение
+        this.u = new BigInteger(this.p.subtract(BigInteger.ONE).bitLength(), new SecureRandom());
+        //z = a^u mod p
         this.z = this.a.modPow(this.u,this.p);
+        //генерируем подпись (больше значений вводить не нужно, поэтому можно сразу)
         initSign();
     }
+    /*
+    заносим ручками хэш
+     */
     public void initHash(BigInteger u){
+        //чистим зависимые значения
         clearStagesAfterHash();
-        if (u.bitLength()>3 && u.bitLength()<this.p.subtract(BigInteger.ONE).bitLength()){
+        //проверяем значения на корректность (длинна)
+        if (u.bitLength()>3){
             this.u = u;
             this.z = this.a.modPow(this.u,this.p);
             initSign();
         }else {
+            //если не корректно то кидаем исключение
+            this.u = null;
+            this.z = null;
             throw new ArithmeticException("Неправильная длинна u");
         }
     }
@@ -92,9 +124,13 @@ public class Params {
     генерируем подпись (вызывается сразу после генерации хэша)
      */
     public void initSign(){
+        // g = ((u*x) / (z-u)) mod(y`)
         this.g = this.u.multiply(this.x).multiply(this.z.subtract(this.u).modInverse(this.gamma)).mod(this.gamma);
+        // k = ((z-u) / x) mod (y`)
         this.k = this.z.subtract(this.u).multiply(this.x.modInverse(this.gamma)).mod(this.gamma);
+        // s = a ^ g mod (p)
         this.s = this.a.modPow(this.g, this.p);
+        // right = a ^ ( S ^ k mod (p)) mod (p)
         this.right = this.a.modPow(this.s.modPow(this.k,this.p),this.p);
     }
 
@@ -102,7 +138,9 @@ public class Params {
     проверяем подпись - обратить внимание что не только заполняет левуя часть уравнения но и возвращает результат проверки
      */
     public boolean checkSign(){
+        //left = (Sy)^k
         this.left = this.s.multiply(this.y).modPow(this.k, this.p);
+        // left == right ?
         return left.compareTo(right)==0;
     }
 
